@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#f7f4ff">
+<title>ポケツイ交換レート計算</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f7f4ff;color:#302d3d;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif}
+header{text-align:center;padding:24px 16px 14px}
+h1{font-size:22px;margin:0 0 6px}
+header p{font-size:13px;color:#777;margin:0}
+main{max-width:620px;margin:auto;padding:0 14px 40px}
+.card{background:#fff;border:1px solid #e8e3f0;border-radius:18px;padding:16px;margin:12px 0;box-shadow:0 4px 14px rgba(50,40,80,.06)}
+h2{font-size:17px;margin:0 0 12px}
+button,select{font:inherit}
+select{width:100%;padding:12px;border:1px solid #ded8e8;border-radius:12px;background:#fff;color:#302d3d}
+.label{display:block;font-size:13px;font-weight:700;margin:12px 0 7px}
+.checks{display:grid;gap:8px}
+.check{display:flex;align-items:center;gap:9px;padding:10px;border:1px solid #e8e3f0;border-radius:12px;font-size:13px}
+.check input{width:19px;height:19px;accent-color:#7658d6}
+.open,.add{width:100%;border:0;border-radius:12px;padding:13px;background:#7658d6;color:#fff;font-weight:700}
+.close{width:100%;border:1px solid #ddd6ea;border-radius:12px;padding:11px;background:#fff;color:#666;margin-top:8px}
+.form{margin-top:12px;padding-top:4px;border-top:1px solid #eee9f4}
+.preview{margin-top:12px;padding:12px;border-radius:12px;background:#eee9ff;font-size:13px}
+.preview b{font-size:20px}
+.item{display:flex;justify-content:space-between;gap:10px;padding:11px;border:1px solid #e8e3f0;border-radius:12px;margin:8px 0;font-size:13px}
+.item small{display:block;color:#777;margin-top:4px;line-height:1.45}
+.item-right{text-align:right;white-space:nowrap}
+.delete{border:0;background:none;color:#b65363;padding:5px 0}
+.total{display:flex;justify-content:space-between;border-top:1px solid #eee9f4;padding-top:12px;margin-top:10px;font-weight:700}
+.result{text-align:center}
+.nums{display:flex;justify-content:center;gap:38px;margin:12px 0}
+.nums span{display:block;color:#777;font-size:12px}
+.nums b{font-size:26px}
+.diff{font-size:32px;font-weight:800}
+.badge{display:inline-block;margin-top:8px;padding:8px 14px;border-radius:999px;font-weight:700;font-size:13px}
+.good{background:#e2f4ea;color:#287d58}
+.ok{background:#f5ecd3;color:#85651c}
+.warn{background:#f8e7dc;color:#ae6842}
+.bad{background:#fae3e7;color:#ad4655}
+.reset{width:100%;margin-top:14px;padding:11px;border:1px solid #ddd6ea;border-radius:12px;background:#fff;color:#666}
+.note{font-size:11px;color:#777;line-height:1.6;margin-top:12px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header>
+<h1>ポケツイ交換レート計算</h1>
+<p>条件を選んでアイテムを追加するだけ ✨</p>
+</header>
+
+<main>
+<section class="card">
+<h2>譲るもの</h2>
+<div id="giveList"></div>
+<div class="total"><span>譲るもの合計</span><span id="giveTotal">0</span></div>
+<button class="open" type="button" id="giveOpen">＋ アイテムを追加</button>
+<div id="giveForm" class="form hidden"></div>
+</section>
+
+<section class="card">
+<h2>求めるもの</h2>
+<div id="wantList"></div>
+<div class="total"><span>求めるもの合計</span><span id="wantTotal">0</span></div>
+<button class="open" type="button" id="wantOpen">＋ アイテムを追加</button>
+<div id="wantForm" class="form hidden"></div>
+</section>
+
+<section class="card result">
+<h2>交換結果</h2>
+<div class="nums">
+<div><span>譲る</span><b id="giveNum">0</b></div>
+<div><span>求める</span><b id="wantNum">0</b></div>
+</div>
+<div class="diff" id="diff">＋0</div>
+<div id="judge" class="badge ok">丁度いいレート</div>
+<div class="note">差 ＝ 求めるもの − 譲るもの<br>＋の数字が大きいほど、あなたにとって好条件です。</div>
+<button class="reset" type="button" id="reset">全部リセット</button>
+</section>
+
+<div class="note" style="text-align:center">※レプリカは、すべての加算後に最終レートを1/2にします。</div>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+var BASE={
+"現行N":1,"現行R":2,"現行SR":4,
+"過去N":2,"過去R":4,"過去SR":8
+};
+
+var SALES=[
+["通常ガチャ",0],["イベント品",0],["福袋",1],
+["Choice Bag（CB）",1],["招待ガチャ",1],
+["ドリフェス（DF）",2],["課金のおまけ品",2]
+];
+
+var EXTRAS=[
+["人気品（ほしい1万超え）",1],
+["年代物（23年以前のアイテム）",1],
+["香水・エクステ・ケモ耳など",1]
+];
+
+var data={give:[],want:[]};
+
+function esc(s){
+return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function fmt(n){
+return Number.isInteger(n)?String(n):String(n).replace(/\.0$/,"");
+}
+
+function makeForm(side){
+var typeId=side+"Type", saleId=side+"Sale";
+var h='<label class="label">アイテムの種類</label>';
+h+='<select id="'+typeId+'">';
+Object.keys(BASE).forEach(function(x){h+='<option value="'+esc(x)+'">'+esc(x)+'</option>';});
+h+='</select>';
+
+h+='<label class="label">販売形態</label><select id="'+saleId+'">';
+SALES.forEach(function(x){h+='<option value="'+esc(x[0])+'">'+esc(x[0])+'</option>';});
+h+='</select>';
+
+h+='<label class="label">追加条件</label><div class="checks">';
+EXTRAS.forEach(function(x,i){
+h+='<label class="check"><input type="checkbox" id="'+side+'Ex'+i+'"> <span>'+esc(x[0])+'</span><span style="margin-left:auto;color:#777">＋'+x[1]+'</span></label>';
+});
+h+='<label class="check"><input type="checkbox" id="'+side+'Replica"> <span>レプリカ</span><span style="margin-left:auto;color:#777">最後に÷2</span></label>';
+h+='</div>';
+h+='<div class="preview">このアイテム：<b id="'+side+'Preview">1</b> 点</div>';
+h+='<button class="add" type="button" id="'+side+'Add">このアイテムを追加</button>';
+h+='<button class="close" type="button" id="'+side+'Close">閉じる</button>';
+return h;
+}
+
+document.getElementById("giveForm").innerHTML=makeForm("give");
+document.getElementById("wantForm").innerHTML=makeForm("want");
+
+function calc(side){
+var type=document.getElementById(side+"Type").value;
+var sale=document.getElementById(side+"Sale").value;
+var a=BASE[type];
+var add=0;
+var steps=[type+"："+a];
+
+SALES.forEach(function(x){
+if(x[0]===sale && x[1]>0){add+=a*x[1];steps.push(sale+"：＋"+a*x[1]);}
+});
+EXTRAS.forEach(function(x,i){
+if(document.getElementById(side+"Ex"+i).checked){
+add+=a*x[1];steps.push(x[0]+"：＋"+a*x[1]);
+}
+});
+var total=a+add;
+if(document.getElementById(side+"Replica").checked){
+total=total/2;steps.push("レプリカ：÷2");
+}
+document.getElementById(side+"Preview").textContent=fmt(total);
+return {total:total,steps:steps};
+}
+
+function render(side){
+var list=document.getElementById(side+"List");
+list.innerHTML="";
+data[side].forEach(function(it,index){
+var div=document.createElement("div");
+div.className="item";
+var tags=it.tags.length?it.tags.join(" ・ "):"";
+div.innerHTML='<div><b>'+esc(it.type)+'</b><small>'+esc(it.sale)+(tags?" ・ "+esc(tags):"")+'</small><small>'+esc(it.steps.join(" → "))+'</small></div>'+
+'<div class="item-right"><b>'+fmt(it.total)+'点</b><br><button type="button" class="delete" data-side="'+side+'" data-index="'+index+'">削除</button></div>';
+list.appendChild(div);
+});
+var total=data[side].reduce(function(sum,x){return sum+x.total;},0);
+document.getElementById(side+"Total").textContent=fmt(total);
+document.getElementById(side+"Num").textContent=fmt(total);
+updateResult();
+}
+
+function updateResult(){
+var g=data.give.reduce(function(s,x){return s+x.total;},0);
+var w=data.want.reduce(function(s,x){return s+x.total;},0);
+var d=w-g;
+document.getElementById("diff").textContent=(d>=0?"＋":"")+fmt(d);
+var j=document.getElementById("judge");
+if(d>=3){j.textContent="好条件寄り";j.className="badge good";}
+else if(d>=0){j.textContent="丁度いいレート";j.className="badge ok";}
+else if(d===-1){j.textContent="若干損だけどアリかも";j.className="badge warn";}
+else{j.textContent="オススメはしない";j.className="badge bad";}
+}
+
+function addItem(side){
+var c=calc(side);
+var type=document.getElementById(side+"Type").value;
+var sale=document.getElementById(side+"Sale").value;
+var tags=[];
+EXTRAS.forEach(function(x,i){if(document.getElementById(side+"Ex"+i).checked)tags.push(x[0]);});
+if(document.getElementById(side+"Replica").checked)tags.push("レプリカ");
+data[side].push({type:type,sale:sale,tags:tags,total:c.total,steps:c.steps});
+render(side);
+closeForm(side);
+}
+
+function openForm(side){
+document.getElementById(side+"Form").classList.remove("hidden");
+document.getElementById(side+"Open").classList.add("hidden");
+calc(side);
+}
+function closeForm(side){
+document.getElementById(side+"Form").classList.add("hidden");
+document.getElementById(side+"Open").classList.remove("hidden");
+}
+function resetForm(side){
+document.getElementById(side+"Type").selectedIndex=0;
+document.getElementById(side+"Sale").selectedIndex=0;
+EXTRAS.forEach(function(x,i){document.getElementById(side+"Ex"+i).checked=false;});
+document.getElementById(side+"Replica").checked=false;
+calc(side);
+}
+
+["give","want"].forEach(function(side){
+document.getElementById(side+"Open").addEventListener("click",function(){openForm(side);});
+document.getElementById(side+"Add").addEventListener("click",function(){addItem(side);});
+document.getElementById(side+"Close").addEventListener("click",function(){closeForm(side);});
+document.getElementById(side+"Type").addEventListener("change",function(){calc(side);});
+document.getElementById(side+"Sale").addEventListener("change",function(){calc(side);});
+EXTRAS.forEach(function(x,i){
+document.getElementById(side+"Ex"+i).addEventListener("change",function(){calc(side);});
+});
+document.getElementById(side+"Replica").addEventListener("change",function(){calc(side);});
+document.getElementById(side+"List").addEventListener("click",function(e){
+if(e.target.classList.contains("delete")){
+var i=Number(e.target.getAttribute("data-index"));
+data[side].splice(i,1);
+render(side);
+}
+});
+calc(side);
+});
+
+document.getElementById("reset").addEventListener("click",function(){
+data={give:[],want:[]};
+render("give");render("want");
+resetForm("give");resetForm("want");
+closeForm("give");closeForm("want");
+});
+
+render("give");render("want");
+})();
+</script>
+</body>
+</html>
